@@ -8,28 +8,73 @@ class DBHelper {
    * Change this to restaurants.json file location on your server.
    */
   static get DATABASE_URL() {
-    const port = 8000 // Change this to your server port
-    return `http://localhost:${port}/resturant_stage1/data/restaurants.json`;
+    return `http://localhost:1337/restaurants`;
+  }
+  static openDatabase() {
+    if (!navigator.serviceWorker) {
+      return Promise.resolve();
+    }
+
+    return idb.open('restaurantDB', 1, function(upgradeDb){
+      var store = upgradeDb.createObjectStore('restaurantDB', {
+        keyPath: 'id'
+      });
+      store.createIndex('by-id', 'id');
+    });
   }
 
+  static addRestaurantsToDatabase(data){
+    return DBHelper.openDatabase().then(function(db){
+      if(!db) return;
+
+      var tr= db.transaction('restaurantDB', 'readwrite');
+      var store = tr.objectStore('restaurantDB');
+      console.log(store);
+      data.forEach(function(restaurant){
+        store.put(restaurant);
+      });
+      return tr.complete;
+    });
+  }
+
+  static getRestaurantsFromAPI(){
+    return fetch(DBHelper.DATABASE_URL)
+      .then(function(response){
+        return response.json();
+    }).then(restaurants => {
+      DBHelper.addRestaurantsToDatabase(restaurants);
+      return restaurants;
+    });
+  }
+
+  static showCachedRestaurants(){
+     return DBHelper.openDatabase().then(function(db){
+      if(!db) return;
+
+      var store = db.transaction('restaurantDB').objectStore('restaurantDB');
+      return store.getAll();
+    });
+  }
   /**
    * Fetch all restaurants.
    */
   static fetchRestaurants(callback) {
-    let xhr = new XMLHttpRequest();
-    xhr.open('GET', DBHelper.DATABASE_URL);
-    xhr.onload = () => {
-      if (xhr.status === 200) { // Got a success response from server!
-        const json = JSON.parse(xhr.responseText);
-        const restaurants = json.restaurants;
-        callback(null, restaurants);
-      } else { // Oops!. Got an error from server.
-        const error = (`Request failed. Returned status of ${xhr.status}`);
-        callback(error, null);
+    return DBHelper.showCachedRestaurants().then(restaurants => {
+      if(restaurants.length) {
+        return Promise.resolve(restaurants);
+      } else {
+        return DBHelper.getRestaurantsFromAPI();
       }
-    };
-    xhr.send();
+    })
+    .then(restaurants=> {
+      callback(null, restaurants);
+    })
+    .catch(error => {
+      callback(error, null);
+    })
+  
   }
+
 
   /**
    * Fetch a restaurant by its ID.
@@ -143,14 +188,14 @@ class DBHelper {
    * Restaurant page URL.
    */
   static urlForRestaurant(restaurant) {
-    return (`./restaurant.html?id=${restaurant.id}`);
+    return (`restaurant.html?id=${restaurant.id}`);
   }
 
   /**
    * Restaurant image URL.
    */
   static imageUrlForRestaurant(restaurant) {
-    return (`/resturant_stage1/img/${restaurant.photograph}`);
+    return (`img/${restaurant.photograph}.jpg`);
   }
 
   /**
